@@ -20,14 +20,16 @@ df = pd.read_csv(file1, skiprows = 4)
 #Find Zeros
 
 fig0 = px.scatter(df, x='time', y='ch0')
-fig0.update_traces(marker=dict(size=2))
+fig0.update_traces(marker = dict(size = 2),
+                    name = 'pulses',
+                    showlegend = True)
 
 st.plotly_chart(fig0)
 
 lim0 = st.number_input('time(s) before beam starts')
 lim1 = st.number_input('time(s) begining of pdd')
 lim2 = st.number_input('time(s) end of pdd')
-depth = st.number_input('PDD depth (mm)')
+depth = st.number_input('PDD depth (mm)', value = 250)
 
 #Find Zeros
 dfnobeam = df[df.time < lim0]
@@ -58,6 +60,19 @@ dfz.loc[dfz.pulsecoincide, 'ch0zg'] = dfz.ch0z + dfz.ch0za
 dfz.loc[dfz.pulsecoincide, 'ch1zg'] = dfz.ch1z + dfz.ch1za
 dfz.loc[dfz.pulsecoincidea, ['ch0zg', 'ch1zg']] = 0
 
+fig1 = px.scatter(dfz, x = 'time', y = 'ch0z')
+fig1.update_traces(marker = dict(size = 2, color = 'blue', opacity = 0.5),
+                    showlegend = True,
+                    name = 'pulses')
+linefullpulses = go.Scatter(mode = 'markers',
+                            x = dfz.time,
+                            y = dfz.ch0zg,
+                            marker = dict(color = 'red', size = 2, opacity = 0.5),
+                            showlegend = True,
+                            name = 'full pulses')
+fig1.add_traces(linefullpulses)
+st.plotly_chart(fig1)
+
 
 #General Sattistics
 
@@ -71,6 +86,7 @@ ACR = st.number_input('Introduce ACR value', value = 0.9490, step = 0.0001, form
 dfz['chargedose'] = dfz.ch0zg - dfz.ch1zg * ACR
 
 #Calculate dose when only pulses
+st.header ('PDD')
 dfz['chargedosep'] = dfz.loc[dfz.pulse, 'chargedose']
 
 #Create PDD
@@ -94,7 +110,7 @@ pulsespermm = speed * avgtimebetweenpulses
 
 dfzpddp = dfzpdd.dropna().copy()
 
-smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 400)
+smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 100)
 
 dfzpddp['smoothcharge'] = dfzpddp.chargedosep.rolling(smoothfactor, center = True).mean()
 
