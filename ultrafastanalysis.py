@@ -71,7 +71,7 @@ linefullpulses = go.Scatter(mode = 'markers',
                             showlegend = True,
                             name = 'full pulses')
 fig1.add_traces(linefullpulses)
-st.plotly_chart(fig1)
+#st.plotly_chart(fig1)
 
 
 #General Sattistics
