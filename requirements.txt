@@ -1,6 +1,3 @@
 pandas
 plotly
 numpy
-fsspec
-pymedphys
-scipy
