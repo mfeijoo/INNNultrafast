@@ -19,7 +19,8 @@ file1 = st.selectbox('Select File', listoffiles)
 
 @st.cache_data
 def load_data(file):
-    df = pd.read_csv(file, skiprows = 4)
+    path = 's3://bluephysicsaws/%s' %file
+    df = pd.read_csv(path, skiprows = 4)
     return df
 
 df = load_data(file1)
