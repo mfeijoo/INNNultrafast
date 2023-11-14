@@ -3,15 +3,17 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from glob import glob
+import boto3
 
 st.title('INNN Mexico Ultrafast Scans')
 
 st.header ('PDD Single Scan')
 
 #Load the file from a list of files in the directory
+s3 = boto3.client('s3')
+response1 = s3.list_objects_v2(Bucket = 'bluephysicsaws', Prefix='PDD single scan')
 
-listoffiles = glob('PDD single scan/*.csv')
+listoffiles = [file['Key'] for file in response1.get('Contents', [])] 
 
 file1 = st.selectbox('Select File', listoffiles)
 
