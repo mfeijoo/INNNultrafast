@@ -118,7 +118,7 @@ pulsespermm = speed * avgtimebetweenpulses
 
 dfzpddp = dfzpdd.dropna().copy()
 
-smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 100)
+smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 200)
 
 dfzpddp['smoothcharge'] = dfzpddp.chargedosep.rolling(smoothfactor, center = True).mean()
 
