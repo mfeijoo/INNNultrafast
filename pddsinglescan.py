@@ -17,7 +17,13 @@ listoffiles = [file['Key'] for file in response1.get('Contents', [])]
 
 file1 = st.selectbox('Select File', listoffiles)
 
-df = pd.read_csv(file1, skiprows = 4)
+@st.cache_data
+def load_data(file):
+    path = 's3://bluephysicsaws/%s' %file
+    df = pd.read_csv(path, skiprows = 4)
+    return df
+
+df = load_data(file1)
 
 #Find Zeros
 
