@@ -25,12 +25,8 @@ def load_data(file):
 
 df = load_data(file1)
 
-#Find start of beam automatically
-
-#df['chunk'] = df.number // 40
-#dfg = df.groupby('chunk').agg({'time':np.median, 'ch0':np.sum})
-#fig1 = px.line(dfg, x = 'time', y = 'ch0', markers = True)
-#st.plotly_chart(fig1)
+fig0 = px.scatter(df, x = 'time', y = 'ch0')
+st.plotly_chart(fig0)
 
 lim0 = st.number_input('time (s) before beam starts', value = 6.00, step = 0.01, format = '%f')
 
@@ -82,10 +78,11 @@ dfgf['ch0diff'] = dfgf.ch0zg.diff()
 #fig2 = px.line(dfgs, x = 'time', y = 'ch0zg', markers = True)
 #st.plotly_chart(fig2)
 
-starttimes = dfgs.loc[dfgs.ch0diff > 40, 'time']
+cutoff = st.slider('cutoff', min_value = 10, max_value = 60, value = 40)
+starttimes = dfgs.loc[dfgs.ch0diff > cutoff, 'time']
 stss = [starttimes.iloc[0]] + starttimes[starttimes.diff() > 2].to_list()
 sts = [i - 0.5 for i in stss]
-finishtimes = dfgf.loc[dfgf.ch0diff < -40, 'time']
+finishtimes = dfgf.loc[dfgf.ch0diff < -cutoff, 'time']
 ftss = [finishtimes.iloc[0]] + finishtimes[finishtimes.diff() > 2].to_list()
 fts = [i + 0.5 for i in ftss]
 for num ,(stn, ftn) in enumerate(zip(sts, fts)):
@@ -96,10 +93,14 @@ for num ,(stn, ftn) in enumerate(zip(sts, fts)):
 
 st.plotly_chart(fig1)
 
+rowtodrop = st.number_input('shot to drop', min_value = 0, max_value = 18, value = 0)
 #Calculate integrals
 percent = st.slider('Percentage of maximum above average is calculted', min_value = 80, max_value = 100, value = 90) 
 dfi = pd.DataFrame()
 dfi['meandose'] = dfzp.groupby('shot')['dose'].agg(lambda x: x[x >= percent / 100 * x.max()].mean())
+dfi.reset_index(inplace = True)
+if rowtodrop > 0:
+    dfi.drop(rowtodrop - 1, inplace = True)
 dfi['direction'] = ['crossplane', 'inplane'] * 9
 dfi['depth'] = [5,5,10,10,15,15,25,25,50,50,100,100,150,150,200,200,250,250]
 dfig = dfi.loc[:,['meandose', 'depth']].groupby('depth').mean()
