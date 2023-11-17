@@ -25,12 +25,13 @@ def load_data(file):
 
 df = load_data(file1)
 
-lim0 = st.number_input('time (s) before beam starts', value = 3.00, step = 0.01, format = '%f')
+lim0 = st.number_input('time (s) before beam starts', min_value = 0.00, max_value = df.time.max(), value = 3.00, step = 0.01, format = '%f')
+lim1 = st.number_input('time (s) after beam finishes', value = df.time.max(), max_value = df.time.max(), step = 0.01, min_value =0.00, format = '%f')
 fig0 = px.scatter(df, x= 'time', y='ch0')
 st.plotly_chart(fig0)
 
 #Find Zeros
-dfnobeam = df[df.time < lim0]
+dfnobeam = df[(df.time < lim0) | (df.time <= lim1)]
 zeros = dfnobeam.loc[:, 'ch0':].mean()
 dfzeros = df.loc[:, 'ch0':] - zeros
 dfzeros.columns = ['ch0z', 'ch1z']
@@ -92,5 +93,50 @@ for num ,(stn, ftn) in enumerate(zip(sts, fts)):
     dfz.loc[(dfz.time > stn) & (dfz.time < ftn), 'shot'] = num 
     dfzp.loc[(dfzp.time > stn) & (dfzp.time < ftn), 'shot'] = num 
 
-st.plotly_chart(fig1)
+fieldsize = st.number_input('Field Size (mm)', min_value = 0, max_value = 10, value = 5, step = 1)
+percentagemax = st.slider('Percentage of maximum above average is calculated', min_value = 80, max_value = 100, value = 90)
+smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 100, step = 1, value = 1) 
 
+for i in range(2):
+    #Transform measurments intime to position
+
+    dfzp0 = dfzp[dfzp.shot == i]
+    timecenter = dfzp0.loc[dfzp0.dose >= dfzp0.dose.max() * percentagemax/100, 'time'].median()
+    maxnow = dfzp0.loc[dfzp0.dose >  percentagemax/100 * dfzp0.dose.max(), 'dose'].mean()
+    timeedge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dose < maxnow/2), 'time'].max()
+    timeedge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dose < maxnow/2), 'time'].min()
+
+    # Calculate speed
+    speedcalc = fieldsize / (timeedge2 - timeedge1)
+    st.write('Speed measured = %.2f mm/s' %speedcalc)
+
+    #Calculate positions
+    dfzp0['timebetweensamples'] = dfzp0.time.diff()
+    dfzp0['distancetraveled'] = dfzp0.timebetweensamples * speedcalc
+    dfzp0['pos1'] = dfzp0.distancetraveled.cumsum()
+
+    #recenter
+    edge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dose < maxnow/2), 'pos1'].max()
+    edge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dose < maxnow/2), 'pos1'].min()
+    newcenter = (edge1 + edge2) / 2
+
+    dfzp0['pos'] = dfzp0.pos1 - newcenter
+
+    #Smooth out
+    dfzp0['dosesmooth'] = dfzp0.dose.rolling(smoothfactor, center = True).mean()
+    maxnowsmooth = dfzp0.dosesmooth.max()
+    edge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dosesmooth < maxnowsmooth/2), 'pos1'].max()
+    edge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dosesmooth < maxnowsmooth/2), 'pos1'].min()
+    newcenter = (edge1 + edge2) / 2
+    dfzp0['pos'] = dfzp0.pos1 - newcenter
+    dfzp0['reldosesmooth'] = dfzp0.dosesmooth / dfzp0.dosesmooth.max() * 100
+    fig2 = px.scatter(dfzp0, x = 'pos', y = 'reldosesmooth')
+    newedge1 = edge1 - newcenter
+    newedge2 = edge2 - newcenter
+    smoothfieldsize = newedge2 - newedge1
+    fig2.add_vline(x = newedge1, line_dash = "dash", line_color = 'green')
+    fig2.add_vline(x = 0, line_dash = "dash", line_color = 'black')
+    fig2.add_vline(x = newedge2, line_dash = "dash", line_color = 'red')
+    fig2.add_annotation(x=0, y = 50, showarrow = False, text = "Field Size: %.2f mm" %smoothfieldsize)
+    st.plotly_chart(fig2)
+    st.write(dfzp0.loc[:,['pos', 'dosesmooth', 'reldosesmooth']])
