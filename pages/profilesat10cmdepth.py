@@ -24,22 +24,25 @@ def load_data(file):
     return df
 
 df = load_data(file1)
+fig8 = px.scatter(df, x='time', y='ch0', title = 'Raw Data')
+st.plotly_chart(fig8)
 
-lim0 = st.number_input('time (s) before beam starts', min_value = 0.00, max_value = df.time.max(), value = 3.00, step = 0.01, format = '%f')
+lim0 = st.number_input('time (s) before beam starts', min_value = 0.00, max_value = df.time.max(), value = 6.00, step = 0.01, format = '%f')
 lim1 = st.number_input('time (s) after beam finishes', value = df.time.max(), max_value = df.time.max(), step = 0.01, min_value =0.00, format = '%f')
-fig0 = px.scatter(df, x= 'time', y='ch0')
-st.plotly_chart(fig0)
+#st.plotly_chart(fig0)
 
 #Find Zeros
 dfnobeam = df[(df.time < lim0) | (df.time <= lim1)]
 zeros = dfnobeam.loc[:, 'ch0':].mean()
 dfzeros = df.loc[:, 'ch0':] - zeros
 dfzeros.columns = ['ch0z', 'ch1z']
-dfz = pd.concat([df, dfzeros], axis = 1)
+dfzb = pd.concat([df, dfzeros], axis = 1)
+dfz = dfzb.loc[(dfzb.time > lim0) & (dfzb.time < lim1),:]
 
+limpulses = st.slider('minimum pulse', min_value = 1.00, max_value = 1.40, value = 1.05, step = 0.001, format = '%f')
 #Find general pulses
-maxch0nobeam = dfz.loc[dfz.time < lim0, 'ch0z'].max()
-dfz['pulseg'] = dfz.ch0z > maxch0nobeam * 1.40
+maxch0nobeam = dfzb.loc[(dfzb.time < lim0) | (dfzb.time > lim1), 'ch0z'].max()
+dfz['pulseg'] = dfz.ch0z > maxch0nobeam * limpulses
 
 #Find coincide pulses
 dfz['pulseafter'] = dfz.pulseg.shift(-1)
@@ -63,74 +66,90 @@ ACR = st.number_input('ACR', value = 0.949, step = 0.001, max_value = 1.000, for
 
 dfz['dose'] = dfz.ch0zg - dfz.ch1zg * ACR
 
+fig0 = px.scatter(dfz, x= 'time', y='dose', title = 'dose zeroed')
 dfzp = dfz[dfz.pulse].copy()
-fig1 = px.scatter(dfzp, x = 'time', y = 'dose')
-fig1.update_traces(mode = 'markers',
-                    marker = dict (color = 'blue', size = 3, opacity = 0.5),
-                    showlegend = True,
-                    name = 'dose')
 
 #Separate all profiles in each file
 #Find shots
 
-dfzp['chunk'] = dfzp.number // 60
-dfgs = dfzp.groupby('chunk').agg({'time':np.min, 'dose':np.sum})
-dfgf = dfzp.groupby('chunk').agg({'time':np.max, 'dose':np.sum})
+dfz['chunk'] = dfz.number // 60
+dfgs = dfz.groupby('chunk').agg({'time':np.min, 'dose':np.sum})
+dfgf = dfz.groupby('chunk').agg({'time':np.max, 'dose':np.sum})
 dfgs = dfgs.iloc[1:-1,:]
 dfgf = dfgf.iloc[1:-1,:]
 dfgs['dosediff'] = dfgs.dose.diff()
 dfgf['dosediff'] = dfgf.dose.diff()
 
-starttimes = dfgs.loc[dfgs.dosediff > 10, 'time']
+cutoff = st.number_input('Cutoff',  min_value = 1, max_value = 15, value = 10, step = 1)
+starttimes = dfgs.loc[dfgs.dosediff > cutoff, 'time']
 stss = [starttimes.iloc[0]] + starttimes[starttimes.diff() > 2].to_list()
-sts = [i - 0.5 for i in stss]
-finishtimes = dfgf.loc[dfgf.dosediff < -10, 'time']
+sts = [i - 2 for i in stss]
+finishtimes = dfgf.loc[dfgf.dosediff < -cutoff, 'time']
 ftss = [finishtimes.iloc[0]] + finishtimes[finishtimes.diff() > 2].to_list()
-fts = [i + 0.5 for i in ftss]
+fts = [i + 2 for i in ftss]
 for num ,(stn, ftn) in enumerate(zip(sts, fts)):
-    fig1.add_vline(x = stn, line_width = 1, line_dash = 'dash', line_color = 'green', opacity = 0.5)
-    fig1.add_vline(x = ftn, line_width = 1, line_dash = 'dash', line_color = 'red', opacity = 0.5)
-    dfz.loc[(dfz.time > stn) & (dfz.time < ftn), 'shot'] = num 
+    fig0.add_vline(stn, line_dash = 'dash', line_color = 'green')
+    fig0.add_vline(ftn, line_dash = 'dash', line_color = 'red')
     dfzp.loc[(dfzp.time > stn) & (dfzp.time < ftn), 'shot'] = num 
+    dfz.loc[(dfz.time > stn) & (dfz.time < ftn), 'shot'] = num 
 
+st.plotly_chart(fig0)
 fieldsize = st.number_input('Field Size (mm)', min_value = 0, max_value = 10, value = 5, step = 1)
 percentagemax = st.slider('Percentage of maximum above average is calculated', min_value = 80, max_value = 100, value = 90)
-smoothfactor = st.slider('Smooth Factor', min_value = 1, max_value = 100, step = 1, value = 1) 
+smoothfactor= st.slider('Smooth Factor', min_value = 1, max_value = 100, step = 1, value = 1) 
 
-for i in range(2):
+for i in range(num + 1):
     #Transform measurments intime to position
 
-    dfzp0 = dfzp[dfzp.shot == i]
-    timecenter = dfzp0.loc[dfzp0.dose >= dfzp0.dose.max() * percentagemax/100, 'time'].median()
-    maxnow = dfzp0.loc[dfzp0.dose >  percentagemax/100 * dfzp0.dose.max(), 'dose'].mean()
-    timeedge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dose < maxnow/2), 'time'].max()
-    timeedge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dose < maxnow/2), 'time'].min()
+    dfz0 = dfzp[dfzp.shot == i]
+    
+    timecenter = dfz0.loc[dfz0.dose >= dfz0.dose.max() * percentagemax/100, 'time'].median()
+    maxnow = dfz0.loc[dfz0.dose >  percentagemax/100 * dfz0.dose.max(), 'dose'].mean()
+    timeedge1 = dfz0.loc[(dfz0.time < timecenter) & (dfz0.dose < maxnow/2), 'time'].max()
+    timeedge2 = dfz0.loc[(dfz0.time > timecenter) & (dfz0.dose < maxnow/2), 'time'].min()
 
     # Calculate speed
     speedcalc = fieldsize / (timeedge2 - timeedge1)
     st.write('Speed measured = %.2f mm/s' %speedcalc)
 
+    
+
     #Calculate positions
-    dfzp0['timebetweensamples'] = dfzp0.time.diff()
-    dfzp0['distancetraveled'] = dfzp0.timebetweensamples * speedcalc
-    dfzp0['pos1'] = dfzp0.distancetraveled.cumsum()
+    dfz0['timebetweensamples'] = dfz0.time.diff()
+    dfz0['distancetraveled'] = dfz0.timebetweensamples * speedcalc
+    dfz0['pos1'] = dfz0.distancetraveled.cumsum()
+
+    #Calculate samples and pulses per mm
+    numberofpulses = dfz[dfz.shot == i].pulse.sum()
+    numberofsamples = dfz.shape[0]
+    totaldistance = dfz0.distancetraveled.sum()
+    pulsespermm = numberofpulses / totaldistance
+    samplespermm = numberofsamples / totaldistance
+    st.write('Samples per mm %.2f' %samplespermm)
+    st.write('Pulses per mm %.2f' %pulsespermm)
 
     #recenter
-    edge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dose < maxnow/2), 'pos1'].max()
-    edge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dose < maxnow/2), 'pos1'].min()
+    edge1 = dfz0.loc[(dfz0.time < timecenter) & (dfz0.dose < maxnow/2), 'pos1'].max()
+    edge2 = dfz0.loc[(dfz0.time > timecenter) & (dfz0.dose < maxnow/2), 'pos1'].min()
     newcenter = (edge1 + edge2) / 2
 
-    dfzp0['pos'] = dfzp0.pos1 - newcenter
+    dfz0['pos'] = dfz0.pos1 - newcenter
 
     #Smooth out
-    dfzp0['dosesmooth'] = dfzp0.dose.rolling(smoothfactor, center = True).mean()
-    maxnowsmooth = dfzp0.dosesmooth.max()
-    edge1 = dfzp0.loc[(dfzp0.time < timecenter) & (dfzp0.dosesmooth < maxnowsmooth/2), 'pos1'].max()
-    edge2 = dfzp0.loc[(dfzp0.time > timecenter) & (dfzp0.dosesmooth < maxnowsmooth/2), 'pos1'].min()
+    dfz0['dosesmooth'] = dfz0.dose.rolling(smoothfactor, center = True).mean()
+    maxnowsmooth = dfz0.dosesmooth.max()
+    edge1 = dfz0.loc[(dfz0.time < timecenter) & (dfz0.dosesmooth < maxnowsmooth/2), 'pos1'].max()
+    edge2 = dfz0.loc[(dfz0.time > timecenter) & (dfz0.dosesmooth < maxnowsmooth/2), 'pos1'].min()
     newcenter = (edge1 + edge2) / 2
-    dfzp0['pos'] = dfzp0.pos1 - newcenter
-    dfzp0['reldosesmooth'] = dfzp0.dosesmooth / dfzp0.dosesmooth.max() * 100
-    fig2 = px.scatter(dfzp0, x = 'pos', y = 'reldosesmooth')
+    dfz0['pos'] = dfz0.pos1 - newcenter
+    dfz0['reldosesmooth'] = dfz0.dosesmooth / dfz0.dosesmooth.max() * 100
+    dfz0toplot = dfz0.loc[(dfz0.pos > - fieldsize) & (dfz0.pos < fieldsize),:]
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+                            x = dfz0toplot.pos,
+                            y = dfz0toplot.reldosesmooth,
+                            mode = 'markers',
+                            marker = dict(color = 'blue')))
     newedge1 = edge1 - newcenter
     newedge2 = edge2 - newcenter
     smoothfieldsize = newedge2 - newedge1
@@ -139,4 +158,4 @@ for i in range(2):
     fig2.add_vline(x = newedge2, line_dash = "dash", line_color = 'red')
     fig2.add_annotation(x=0, y = 50, showarrow = False, text = "Field Size: %.2f mm" %smoothfieldsize)
     st.plotly_chart(fig2)
-    st.write(dfzp0.loc[:,['pos', 'dosesmooth', 'reldosesmooth']])
+    st.write(dfz0.loc[:,['pos', 'dosesmooth', 'reldosesmooth']])
